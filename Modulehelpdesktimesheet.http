@@ -1,0 +1,6 @@
+@Modulehelpdesktimesheet_HostAddress = http://localhost:5275
+
+GET {{Modulehelpdesktimesheet_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
