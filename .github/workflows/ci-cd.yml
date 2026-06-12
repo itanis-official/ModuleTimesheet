@@ -1,0 +1,125 @@
+name: Gestion Projet DevSecOps Pipeline
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+  packages: read    # nécessaire pour lire ITANIS.SharedEvents depuis GitHub Packages
+
+env:
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/timesheet
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  # === ÉTAPE 1 — Qualité du code ===
+  quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore dependencies
+        env:
+          GITHUB_USERNAME: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.NUGET_GITHUB_TOKEN }}
+        run: dotnet restore Modulehelpdesktimesheet.csproj
+
+      - name: Build
+        run: dotnet build Modulehelpdesktimesheet.csproj --no-restore --configuration Release
+
+  # === ÉTAPE 2 — Analyse SonarCloud ===
+  sonar:
+    name: SonarCloud Analysis
+    runs-on: ubuntu-latest
+    needs: quality
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # historique complet requis par Sonar
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Install SonarCloud scanner
+        run: dotnet tool install --global dotnet-sonarscanner
+
+      - name: SonarCloud Begin
+        env:
+          GITHUB_USERNAME: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.NUGET_GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          dotnet sonarscanner begin \
+            /k:"itanis-official_ModuleTimesheet" \
+            /o:"itanis-official" \
+            /d:sonar.login="${{ secrets.SONAR_TOKEN }}" \
+            /d:sonar.host.url="https://sonarcloud.io"
+
+      - name: Build pour analyse Sonar
+        env:
+          GITHUB_USERNAME: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.NUGET_GITHUB_TOKEN }}
+        run: dotnet build Modulehelpdesktimesheet.csproj --configuration Release
+
+      - name: SonarCloud End
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: dotnet sonarscanner end /d:sonar.login="${{ secrets.SONAR_TOKEN }}"
+
+  # === ÉTAPE 3 — Build Docker, Scan Trivy, Push ===
+  build-scan-push:
+    name: Build Scan and Push
+    runs-on: ubuntu-latest
+    needs: sonar
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build Docker Image
+        run: |
+          docker build -f Dockerfile.prod \
+            --build-arg GITHUB_USERNAME=${{ github.actor }} \
+            --build-arg GITHUB_TOKEN=${{ secrets.NUGET_GITHUB_TOKEN }} \
+            -t ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} .
+
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          exit-code: '1'
+          severity: CRITICAL,HIGH
+          skip-dirs: 'bin,obj'
+
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          format: table
+          exit-code: '1'
+          severity: CRITICAL,HIGH
+
+      - name: Push Docker Image
+        if: success()
+        run: docker push ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
