@@ -86,6 +86,14 @@ namespace ModuleHelpDeskTimesheet.Repositories
             return eventItem;
         }
 
+        public async Task<IEnumerable<DeclarationTemps>> GetDeclarationsByAgentAsync(int agentId, DateTime start, DateTime end)
+        {
+            return await _context.DeclarationTemps
+                .Where(d => d.EmployeIdRh == agentId && d.Date >= start && d.Date <= end)
+                .OrderByDescending(d => d.Date)
+                .ToListAsync();
+        }
+
         #endregion
     }
 }

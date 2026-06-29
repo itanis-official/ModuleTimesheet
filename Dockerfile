@@ -1,21 +1,34 @@
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
-# 1. Copy project files
+# Build args for GitHub Packages auth (passed at build time, never stored in image)
+ARG GITHUB_USERNAME
+ARG GITHUB_TOKEN
+
+# 1. Copy project file and nuget.config
 COPY ModuleHelpDesk-Timesheet/Modulehelpdesktimesheet.csproj ModuleHelpDesk-Timesheet/
-COPY Contrat-d-evenement/ITANIS.SharedEvents.csproj Contrat-d-evenement/
+COPY ModuleHelpDesk-Timesheet/nuget.config ModuleHelpDesk-Timesheet/
 
-# 2. Restore
-RUN dotnet restore ModuleHelpDesk-Timesheet/Modulehelpdesktimesheet.csproj
+# 2. Restore — inject credentials inline, never baked into image layers
+RUN dotnet nuget add source "https://nuget.pkg.github.com/itanis-official/index.json" \
+    --name github-itanis \
+    --username "${GITHUB_USERNAME}" \
+    --password "${GITHUB_TOKEN}" \
+    --store-password-in-clear-text \
+    --configfile ModuleHelpDesk-Timesheet/nuget.config \
+    || true
 
-# 3. Copy source code (specific folders, not COPY . .)
+RUN dotnet restore ModuleHelpDesk-Timesheet/Modulehelpdesktimesheet.csproj \
+    --configfile ModuleHelpDesk-Timesheet/nuget.config
+
+# 3. Copy full source
 COPY ModuleHelpDesk-Timesheet/ ModuleHelpDesk-Timesheet/
-COPY Contrat-d-evenement/ Contrat-d-evenement/
 
 # 4. Publish
 WORKDIR /src/ModuleHelpDesk-Timesheet
 RUN dotnet publish -c Release -o /app/out
 
+# --- Final stage (no credentials, no SDK) ---
 FROM mcr.microsoft.com/dotnet/aspnet:8.0
 WORKDIR /app
 COPY --from=build /app/out .

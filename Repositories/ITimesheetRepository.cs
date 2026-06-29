@@ -15,4 +15,7 @@ public interface ITimesheetRepository
     // Calendrier
     Task<IEnumerable<Calendrier>> GetCalendarByAgentAsync(int agentId, DateTime start, DateTime end);
     Task<Calendrier> CreateEventAsync(Calendrier eventItem);
+
+    // Déclarations de temps (Gestion de Projets)
+    Task<IEnumerable<DeclarationTemps>> GetDeclarationsByAgentAsync(int agentId, DateTime start, DateTime end);
 }

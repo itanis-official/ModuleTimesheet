@@ -1,9 +1,11 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ModuleHelpDeskTimesheet.Models;
 using ModuleHelpDeskTimesheet.Repositories;
 
 namespace ModuleHelpDeskTimesheet.Controllers
 {
+    [Authorize]
     [ApiController]
     [Route("api/[controller]")]
     public class TimesheetController : ControllerBase
@@ -34,6 +36,14 @@ namespace ModuleHelpDeskTimesheet.Controllers
             return Ok(entries);
         }
 
+        // GET: api/Timesheet
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<TimesheetEntry>>> GetAll()
+        {
+            var entries = await _repo.GetAllEntriesAsync();
+            return Ok(entries);
+        }
+
         // POST: api/Timesheet
         [HttpPost]
         public async Task<ActionResult<TimesheetEntry>> CreateEntry([FromBody] TimesheetEntry entry)
@@ -55,5 +65,16 @@ public async Task<IActionResult> Revue(int id, [FromQuery] StatutTimesheet statu
     
     return NoContent();
 }
+
+        // GET: api/Timesheet/declarations/agent/1?start=2024-01-01&end=2024-01-31
+        [HttpGet("declarations/agent/{agentId}")]
+        public async Task<ActionResult<IEnumerable<DeclarationTemps>>> GetDeclarationsByAgent(
+            int agentId,
+            [FromQuery] DateTime start,
+            [FromQuery] DateTime end)
+        {
+            var declarations = await _repo.GetDeclarationsByAgentAsync(agentId, start, end);
+            return Ok(declarations);
+        }
     }
 }
